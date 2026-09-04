@@ -1,0 +1,64 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: file:/app/prisma/dev.db
+      PORT: "8000"
+      NODE_ENV: production
+      AUTH_MODE: ${AUTH_MODE:-local}
+      FRONTEND_URL: ${FRONTEND_URL:-https://draw.notsg.in}
+      TRUST_PROXY: "1"
+      # Cloudflare terminates HTTPS before forwarding through Coolify and nginx.
+      ENFORCE_HTTPS_REDIRECT: "false"
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in Coolify}
+      CSRF_SECRET: ${CSRF_SECRET:?Set CSRF_SECRET in Coolify}
+      MCP_API_TOKEN: ${MCP_API_TOKEN:?Set MCP_API_TOKEN in Coolify}
+      UPDATE_CHECK_OUTBOUND: "false"
+      ENABLE_AUDIT_LOGGING: "true"
+    volumes:
+      - backend-data:/app/prisma
+    expose:
+      - "8000"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://127.0.0.1:8000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    environment:
+      BACKEND_URL: backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    expose:
+      - "80"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://127.0.0.1:80",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  backend-data:
